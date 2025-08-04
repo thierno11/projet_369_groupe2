@@ -1,0 +1,185 @@
+version: "3.8"
+
+services:
+  mongodb:
+    image: mongodb/mongodb-community-server:7.0.21-ubuntu2204
+    ports:
+      - "27017:27017"
+    networks:
+      - projet360-net
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+    volumes:
+      - mongodb-data:/data/db
+      - ./docker/mongo/data:/donnee
+
+  namenode:
+    image: apache/hadoop:3
+    hostname: namenode
+    command: ["hdfs", "namenode"]
+    ports:
+      - "9870:9870"
+    env_file:
+      - ./docker/hadoop/config
+    environment:
+      ENSURE_NAMENODE_DIR: "/tmp/hadoop-root/dfs/name"
+    networks:
+      - projet360-net
+
+  datanode:
+    image: apache/hadoop:3
+    command: ["hdfs", "datanode"]
+    env_file:
+      - ./docker/hadoop/config
+    networks:
+      - projet360-net
+
+  resourcemanager:
+    image: apache/hadoop:3
+    hostname: resourcemanager
+    command: ["yarn", "resourcemanager"]
+    ports:
+      - "8088:8088"
+    env_file:
+      - ./docker/hadoop/config
+    volumes:
+      - ./test.sh:/opt/test.sh
+    networks:
+      - projet360-net
+
+  nodemanager:
+    image: apache/hadoop:3
+    command: ["yarn", "nodemanager"]
+    env_file:
+      - ./docker/hadoop/config
+    networks:
+      - projet360-net
+
+  neo4j:
+    image: neo4j:community-ubi9
+    container_name: neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    restart: unless-stopped
+    volumes:
+      - ./docker/neo4j/data:/data
+      - ./docker/neo4j/conf:/conf
+      - ./docker/neo4j/logs:/logs
+      - ./docker/neo4j/plugins:/plugins
+    environment:
+      - NEO4J_AUTH=neo4j/12345678
+    networks:
+      - projet360-net
+
+  mysql:
+    image: mysql:latest
+    container_name: mysql-projet360
+    environment:
+      MYSQL_ROOT_PASSWORD: "1234"
+    ports:
+      - "3304:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - projet360-net
+
+  broker:
+    image: apache/kafka:latest
+    container_name: broker
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://localhost:9092,CONTROLLER://localhost:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    networks:
+      - projet360-net
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=MonClusterCassandra
+      - CASSANDRA_DC=dc1
+      - CASSANDRA_RACK=rack1
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    networks:
+      - projet360-net
+
+  elasticsearch:
+    image: elasticsearch:9.0.3
+    container_name: elasticsearch
+    ports:
+      - "9200:9200"
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data/
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+    networks:
+      - projet360-net
+
+  logstash:
+    image: logstash:9.0.3
+    container_name: logstash
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./docker/logstash/config:/usr/share/logstash/config:ro
+      - ./docker/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./docker/logstash/data:/usr/share/logstash/donnee
+    networks:
+      - projet360-net
+
+  kibana:
+    image: kibana:9.0.3
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - projet360-net
+
+  postgres:
+    image: postgres
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  mysql_data:
+  elastic_data:
+  cassandra-data:
+  mongodb-data:
+  pg_data:
+
+networks:
+  projet360-net:
+    driver: bridge
